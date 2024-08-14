@@ -1,14 +1,10 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import celery
-
 from celery import signals
-from celery.bin.base import Option
-
 from .templates import use_template, template_names
 
-IS_CELERY_4 = celery.VERSION[0] >= 4
-
+IS_CELERY_5 = celery.VERSION[0] >= 5
 
 class App(celery.Celery):
     cyanide_suite = 'cyanide.suites.default:Default'
@@ -17,20 +13,16 @@ class App(celery.Celery):
     def __init__(self, *args, **kwargs):
         self.template = kwargs.pop('template', None)
         super(App, self).__init__(*args, **kwargs)
-        self.user_options['preload'].add(
-            Option(
-                '-Z', '--template', default='default', type=str,
-                help='Configuration template to use: {0}'.format(
-                    template_names(),
-                ),
-            )
-        )
-        signals.user_preload_options.connect(self.on_preload_parsed)
-        if IS_CELERY_4:
-            self.on_configure.connect(self._maybe_use_default_template)
 
-    def on_preload_parsed(self, options=None, **kwargs):
-        self.use_template(options['template'])
+        # Directly apply the template after initialization
+        self._apply_template()
+
+    def _apply_template(self):
+        """ Apply the template after the app has been initialized. """
+        if self.template:
+            self.use_template(self.template)
+        else:
+            self._maybe_use_default_template()
 
     def use_template(self, name='default'):
         if self.template_selected:
@@ -42,16 +34,5 @@ class App(celery.Celery):
         if not self.template_selected:
             self.use_template('default')
 
-    if not IS_CELERY_4:
-        after_configure = None
-
-        def _get_config(self):
-            ret = super(App, self)._get_config()
-            if self.after_configure:
-                self.after_configure(ret)
-            return ret
-
-        def on_configure(self):
-            self._maybe_use_default_template()
-
+# Instantiate the app
 app = App('cyanide', set_as_current=False)

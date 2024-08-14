@@ -1,3 +1,6 @@
+python-vagrant
+sphinx_celery>=1.1
+celery
 setuptools>=20.6.7
 wheel>=0.29.0
 flake8>=2.5.4
@@ -5,3 +8,6 @@ flakeplus>=1.1
 tox>=2.3.1
 sphinx2rst>=1.0
 bumpversion
+coverage>=3.0
+codecov
+case
