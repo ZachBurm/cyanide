@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyanide"
+version = "1.3.0"  # Update with your actual version
+description = "Celery integration test suite"
+readme = "README.rst"
+dynamic = ["dependencies"]
+requires-python = ">=3.10"
+license = {text = "BSD"}
+authors = [
+    {name = "Ask Solem", email = "ask@celeryproject.org"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Operating System :: OS Independent"
+]
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+exclude = ["ez_setup", "tests", "tests.*"]
+
+[project.entry-points."celery.commands"]
+cyanide = "cyanide.bin.cyanide:cyanide_command"
+vagrant = "cyanide.bin.vagrant:vagrant"

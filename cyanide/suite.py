@@ -8,13 +8,13 @@ import platform
 import socket
 import sys
 import traceback
+import time
 
 from collections import OrderedDict, defaultdict, namedtuple
 from functools import partial
 from itertools import count, cycle
 
 from celery.exceptions import TimeoutError
-from celery.five import items, monotonic, range, values
 from celery.utils.debug import blockdetection
 from celery.utils.imports import qualname
 from celery.utils.text import pluralize, truncate
@@ -23,11 +23,6 @@ from kombu.utils import retry_over_time
 
 from .fbi import FBI
 from .tasks import marker, _marker
-
-try:
-    from celery.platforms import isatty
-except ImportError:
-    from celery.utils import isatty
 
 try:
     import celery.utils.time as timeutils
@@ -63,21 +58,16 @@ Progress = namedtuple('Progress', (
     'index', 'repeats', 'runtime', 'elapsed', 'completed',
 ))
 
-
 Inf = float('Inf')
-
 
 def assert_equal(a, b):
     assert a == b, '{0!r} != {1!r}'.format(a, b)
 
-
 class StopSuite(Exception):
     pass
 
-
 class Sentinel(Exception):
     pass
-
 
 def humanize_seconds(secs, prefix='', sep='', now='now', **kwargs):
     s = timeutils.humanize_seconds(secs, prefix, sep, now, **kwargs)
@@ -86,10 +76,9 @@ def humanize_seconds(secs, prefix='', sep='', now='now', **kwargs):
             float(secs), prefix=prefix, sep=sep)
     return s
 
-
 def pstatus(p, status=None):
-    runtime = format(monotonic() - p.runtime, '.4f')
-    elapsed = format(monotonic() - p.elapsed, '.4f')
+    runtime = format(time.monotonic() - p.runtime, '.4f')
+    elapsed = format(time.monotonic() - p.elapsed, '.4f')
     return F_PROGRESS.format(
         p,
         status=status or '',
@@ -97,23 +86,21 @@ def pstatus(p, status=None):
         elapsed=humanize_seconds(elapsed, now=elapsed),
     )
 
-
 class Speaker(object):
 
     def __init__(self, gap=5.0, file=None):
         self.gap = gap
         self.file = sys.stdout if file is None else file
-        self.last_noise = monotonic() - self.gap * 2
+        self.last_noise = time.monotonic() - self.gap * 2
 
     def beep(self):
-        now = monotonic()
+        now = time.monotonic()
         if now - self.last_noise >= self.gap:
             self.emit()
             self.last_noise = now
 
     def emit(self):
         print('\a', file=self.file, end='')
-
 
 class Meter(object):
 
@@ -133,7 +120,6 @@ class Meter(object):
     def revert(self):
         self.counter = 0
 
-
 class DummyMeter(object):
 
     def __init__(self, *args, **kwargs):
@@ -145,10 +131,8 @@ class DummyMeter(object):
     def revert(self):
         pass
 
-
 def testgroup(*funs):
     return OrderedDict((fun.__name__, fun) for fun in funs)
-
 
 class ManagerMixin(object):
     TaskPredicate = StopSuite
@@ -249,13 +233,13 @@ class ManagerMixin(object):
         return self.app.control.inspect(timeout=timeout)
 
     def query_tasks(self, ids, timeout=0.5):
-        for reply in items(self.inspect(timeout).query_task(ids) or []):
+        for reply in self.inspect(timeout).query_task(ids) or []:
             yield reply
 
     def query_task_states(self, ids, timeout=0.5):
         states = defaultdict(set)
         for hostname, reply in self.query_tasks(ids, timeout=timeout):
-            for task_id, (state, _) in items(reply):
+            for task_id, (state, _) in reply.items():
                 states[state].add(task_id)
         return states
 
@@ -297,7 +281,6 @@ class ManagerMixin(object):
             raise Sentinel()
         return res
 
-
 class Suite(ManagerMixin):
 
     TaskPredicate = StopSuite
@@ -305,7 +288,7 @@ class Suite(ManagerMixin):
     def __init__(self, app, no_color=False, **kwargs):
         self.app = app
         self._init_manager(app, **kwargs)
-        if not isatty(self.stdout):
+        if not sys.stdout.isatty():
             no_color = True
         self.colored = colored(enabled=not no_color)
         self.init_groups()
@@ -331,17 +314,17 @@ class Suite(ManagerMixin):
             if not _is_descriptor(self, attr):
                 meth = getattr(self, attr)
                 try:
-                    groups = meth.__func__.__testgroup__
+                    groups = meth.__testgroup__
                 except AttributeError:
                     pass
                 else:
                     for g in groups:
                         acc[g].append(meth)
         # sort the tests by the order in which they are defined in the class
-        for g in values(acc):
-            g[:] = sorted(g, key=lambda m: m.__func__.__testsort__)
+        for g in acc.values():
+            g[:] = sorted(g, key=lambda m: m.__testsort__)
         self.groups = dict(
-            (name, testgroup(*tests)) for name, tests in items(acc)
+            (name, testgroup(*tests)) for name, tests in acc.items()
         )
 
     def run(self, names=None, iterations=50, offset=0,
@@ -377,7 +360,7 @@ class Suite(ManagerMixin):
         tests = self.groups[group]
         try:
             return ([tests[n] for n in names] if names
-                    else list(values(tests)))
+                    else list(tests.values()))
         except KeyError as exc:
             raise KeyError('Unknown test name: {0}'.format(exc))
 
@@ -409,7 +392,7 @@ class Suite(ManagerMixin):
         self.print(header)
         with blockdetection(self.block_timeout):
             with self.fbi.investigation():
-                runtime = elapsed = monotonic()
+                runtime = elapsed = time.monotonic()
                 i = 0
                 failed = False
                 self.progress = Progress(
@@ -419,7 +402,7 @@ class Suite(ManagerMixin):
 
                 try:
                     for i in range(n):
-                        runtime = monotonic()
+                        runtime = time.monotonic()
                         self.progress = Progress(
                             fun, i + 1, n, index, repeats, runtime, elapsed, 0,
                         )
@@ -433,7 +416,7 @@ class Suite(ManagerMixin):
                     if n > 1 or failed:
                         self.print('{0} {1} iterations in {2}'.format(
                             'failed after' if failed else 'completed',
-                            i + 1, humanize_seconds(monotonic() - elapsed),
+                            i + 1, humanize_seconds(time.monotonic() - elapsed),
                         ), file=self.stderr if failed else self.stdout)
                     if not failed:
                         self.progress = Progress(
@@ -466,7 +449,6 @@ class Suite(ManagerMixin):
 
 _creation_counter = count(0)
 
-
 def testcase(*groups, **kwargs):
     if not groups:
         raise ValueError('@testcase requires at least one group name')
@@ -478,7 +460,6 @@ def testcase(*groups, **kwargs):
         return fun
 
     return _mark_as_case
-
 
 def _is_descriptor(obj, attr):
     try:
